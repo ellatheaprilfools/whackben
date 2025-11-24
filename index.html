@@ -9,6 +9,7 @@
     font-family: sans-serif; 
     text-align: center; 
     margin: 0;
+    background: #f5f5f5;
   }
 
   h1 { 
@@ -51,10 +52,93 @@
     display: none;
     pointer-events: none;
   }
+
+  #startScreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  #startScreen h2 {
+    color: #fff;
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  #startScreen p {
+    color: #ddd;
+    font-size: 1.2rem;
+    margin-bottom: 2rem;
+  }
+
+  .btn {
+    padding: 1rem 2.5rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,.3);
+    transition: all 0.3s;
+  }
+
+  .btn:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0,0,0,.4);
+  }
+
+  .btn:active {
+    transform: translateY(0);
+  }
+
+  #replayBtn {
+    margin-top: 1rem;
+    display: none;
+    padding: 0.8rem 2rem;
+    font-size: 1.2rem;
+  }
+
+  .point-popup {
+    position: absolute;
+    color: #FFD700;
+    font-size: 2rem;
+    font-weight: bold;
+    pointer-events: none;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    animation: pointFloat 1s ease-out forwards;
+  }
+
+  @keyframes pointFloat {
+    0% {
+      opacity: 1;
+      transform: translate(-50%, 0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -60px) scale(1.5);
+    }
+  }
 </style>
 </head>
 
 <body>
+
+<div id="startScreen">
+  <h2>🔨 Whac-A-Mole 🔨</h2>
+  <p>Hit the moles, avoid the eagles!<br>You have 30 seconds. Good luck!</p>
+  <button class="btn" onclick="startGame()">START GAME</button>
+</div>
 
 <h1>Whac-A-Mole</h1>
 
@@ -66,7 +150,8 @@
 </div>
 
 <div id="gameOver"></div>
-<div id="popup">Oh no, don’t hit the soaring eagle!</div>
+<button id="replayBtn" class="btn" onclick="replayGame()">PLAY AGAIN</button>
+<div id="popup">Oh no, don't hit the soaring eagle!</div>
 
 
 <script>
@@ -88,6 +173,8 @@ const scoreEl  = document.getElementById('score');
 const timerEl  = document.getElementById('timer');
 const gameOver = document.getElementById('gameOver');
 const popup    = document.getElementById('popup');
+const startScreen = document.getElementById('startScreen');
+const replayBtn = document.getElementById('replayBtn');
 
 /* IMAGES */
 const moleImg  = new Image();
@@ -103,11 +190,12 @@ benImg.src     = "ben.png";
 let score = 0;
 let spawnCount = 0;
 let timeLeft = ROUND_TIME;
-let playing = true;
+let playing = false;
+let gameStarted = false;
 let spawnHandle, timerHandle;
 
 /* HOLES SETUP */
-const holes = Array.from({length: HOLES}, (_, i) => ({
+let holes = Array.from({length: HOLES}, (_, i) => ({
   x: (i % 3) * 200 + 100,
   y: i < 3 ? 120 : 300,
   state: 0,
@@ -127,12 +215,25 @@ const showPopup = () => {
   setTimeout(() => popup.style.display = "none", POPUP_TIME);
 };
 
+const showPointPopup = (x, y, points) => {
+  const rect = canvas.getBoundingClientRect();
+  const pointDiv = document.createElement('div');
+  pointDiv.className = 'point-popup';
+  pointDiv.textContent = `+${points}`;
+  pointDiv.style.left = (rect.left + x) + 'px';
+  pointDiv.style.top = (rect.top + y) + 'px';
+  document.body.appendChild(pointDiv);
+  
+  setTimeout(() => pointDiv.remove(), 1000);
+};
+
 const endGame = () => {
   playing = false;
   clearInterval(spawnHandle);
   clearInterval(timerHandle);
-  gameOver.textContent = `Time’s up! Final score: ${score}`;
+  gameOver.textContent = `Time's up! Final score: ${score}`;
   gameOver.style.display = "block";
+  replayBtn.style.display = "inline-block";
 };
 
 const spawn = () => {
@@ -146,12 +247,13 @@ const spawn = () => {
   h.state   = 0;
 };
 
-const addHit = isBen => {
+const addHit = (isBen, x, y) => {
   if (isBen) {
     showPopup();
     score = 0;
   } else {
     score++;
+    showPointPopup(x, y, 1);
     // clap.play();  // optional
   }
   updateHUD();
@@ -174,7 +276,7 @@ canvas.addEventListener('click', e => {
     const radius = h.ben ? R_BEN : R_MOLE;
 
     if (Math.hypot(mx - cx, my - cy) < radius) {
-      addHit(h.ben);
+      addHit(h.ben, mx, my);
       h.showing = false;
     }
   });
@@ -213,7 +315,7 @@ const tick = now => {
     }
   });
 
-  if (playing) requestAnimationFrame(tick);
+  if (playing || !gameStarted) requestAnimationFrame(tick);
 };
 
 /* SAFE IMAGE LOADING */
@@ -224,16 +326,42 @@ function loadImage(img) {
   });
 }
 
-/* START GAME */
+/* GAME CONTROLS */
+function startGame() {
+  startScreen.style.display = 'none';
+  gameStarted = true;
+  playing = true;
+  score = 0;
+  spawnCount = 0;
+  timeLeft = ROUND_TIME;
+  
+  holes.forEach(h => {
+    h.state = 0;
+    h.showing = false;
+    h.ben = false;
+    h.timer = 0;
+  });
+  
+  gameOver.style.display = "none";
+  replayBtn.style.display = "none";
+  
+  updateHUD();
+  spawnHandle = setInterval(spawn, 800);
+  timerHandle = setInterval(() => {
+    timeLeft--;
+    updateHUD();
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+}
+
+function replayGame() {
+  startGame();
+}
+
+/* INITIALIZE */
 Promise.all([loadImage(moleImg), loadImage(benImg)])
   .then(() => {
     updateHUD();
-    spawnHandle = setInterval(spawn, 800);
-    timerHandle = setInterval(() => {
-      timeLeft--;
-      updateHUD();
-      if (timeLeft <= 0) endGame();
-    }, 1000);
     requestAnimationFrame(tick);
   });
 
