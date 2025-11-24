@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Whac-A-Mole</title>
+
+<style>
+  body { 
+    font-family: sans-serif; 
+    text-align: center; 
+    margin: 0;
+  }
+
+  h1 { 
+    margin-top: 0.7rem; 
+  }
+
+  canvas {
+    background: #90d070;
+    border: 6px solid #654321;
+    border-radius: 8px;
+    cursor: url("hammer.png") 6 4, auto;
+    margin-top: 1rem;
+  }
+
+  #hud { 
+    margin-top: 0.5rem; 
+    font-size: 1.3rem; 
+  }
+
+  #gameOver { 
+    margin-top: 0.8rem; 
+    font-size: 1.8rem; 
+    color: #b30000; 
+    display: none; 
+  }
+
+  #popup {
+    position: fixed;
+    right: 1.2rem; 
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 0.6rem 1rem;
+    background: #ffe6f8;
+    color: #c1006f;
+    border: 3px solid #c1006f;
+    border-radius: 10px;
+    font-weight: bold;
+    font-size: 1rem;
+    box-shadow: 0 0 8px rgba(0,0,0,.25);
+    display: none;
+    pointer-events: none;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>Whac-A-Mole</h1>
+
+<canvas id="game" width="600" height="400"></canvas>
+
+<div id="hud">
+  <span id="score">Score : 0</span> |
+  <span id="timer">Time : 30</span>
+</div>
+
+<div id="gameOver"></div>
+<div id="popup">Oh no, don’t hit the soaring eagle!</div>
+
+
+<script>
+/* CONFIG */
+const HOLES       = 6;
+const R_BASE      = 45;
+const R_MOLE      = R_BASE + 12;
+const R_BEN       = R_MOLE + 12;
+const SHOW_TIME   = 900;
+const RISE_TIME   = 140;
+const ROUND_TIME  = 30;
+const BEN_FREQ    = 5;
+const POPUP_TIME  = 1300;
+
+/* ELEMENTS */
+const canvas   = document.getElementById('game');
+const ctx      = canvas.getContext('2d');
+const scoreEl  = document.getElementById('score');
+const timerEl  = document.getElementById('timer');
+const gameOver = document.getElementById('gameOver');
+const popup    = document.getElementById('popup');
+
+/* IMAGES */
+const moleImg  = new Image();
+moleImg.src    = "mole.png";
+
+const benImg   = new Image();
+benImg.src     = "ben.png";
+
+/* SOUND (optional) */
+// const clap = new Audio("clap.mp3");
+
+/* STATE */
+let score = 0;
+let spawnCount = 0;
+let timeLeft = ROUND_TIME;
+let playing = true;
+let spawnHandle, timerHandle;
+
+/* HOLES SETUP */
+const holes = Array.from({length: HOLES}, (_, i) => ({
+  x: (i % 3) * 200 + 100,
+  y: i < 3 ? 120 : 300,
+  state: 0,
+  showing: false,
+  ben: false,
+  timer: 0
+}));
+
+/* HELPERS */
+const updateHUD = () => {
+  scoreEl.textContent = `Score : ${score}`;
+  timerEl.textContent = `Time : ${timeLeft}`;
+};
+
+const showPopup = () => {
+  popup.style.display = "block";
+  setTimeout(() => popup.style.display = "none", POPUP_TIME);
+};
+
+const endGame = () => {
+  playing = false;
+  clearInterval(spawnHandle);
+  clearInterval(timerHandle);
+  gameOver.textContent = `Time’s up! Final score: ${score}`;
+  gameOver.style.display = "block";
+};
+
+const spawn = () => {
+  const h = holes[Math.floor(Math.random() * HOLES)];
+  if (h.showing) return;
+
+  spawnCount++;
+  h.ben     = (spawnCount % BEN_FREQ === 0);
+  h.showing = true;
+  h.timer   = SHOW_TIME;
+  h.state   = 0;
+};
+
+const addHit = isBen => {
+  if (isBen) {
+    showPopup();
+    score = 0;
+  } else {
+    score++;
+    // clap.play();  // optional
+  }
+  updateHUD();
+};
+
+/* CLICK HANDLER */
+canvas.addEventListener('click', e => {
+  if (!playing) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  holes.forEach(h => {
+    if (!h.showing) return;
+
+    const dy = R_BASE - h.state * R_BASE * 2;
+    const cx = h.x;
+    const cy = h.y - dy;
+    const radius = h.ben ? R_BEN : R_MOLE;
+
+    if (Math.hypot(mx - cx, my - cy) < radius) {
+      addHit(h.ben);
+      h.showing = false;
+    }
+  });
+});
+
+/* ANIMATION LOOP */
+let last = performance.now();
+const tick = now => {
+  const dt = now - last;
+  last = now;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#6ca940";
+  ctx.fillRect(0, canvas.height / 2, canvas.width, canvas.height / 2);
+
+  holes.forEach(h => {
+    if (h.showing) {
+      h.state = Math.min(1, h.state + dt / RISE_TIME);
+      h.timer -= dt;
+      if (h.timer <= 0) h.showing = false;
+    } else {
+      h.state = Math.max(0, h.state - dt / RISE_TIME);
+    }
+
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, R_BEN, 0, Math.PI * 2);
+    ctx.fillStyle = "#3d2d1e";
+    ctx.fill();
+
+    if (h.state > 0) {
+      const img = h.ben ? benImg : moleImg;
+      const r = h.ben ? R_BEN : R_MOLE;
+      const off = r * 2 * (1 - h.state);
+      ctx.drawImage(img, h.x - r, h.y - r - 10 + off, r * 2, r * 2);
+    }
+  });
+
+  if (playing) requestAnimationFrame(tick);
+};
+
+/* SAFE IMAGE LOADING */
+function loadImage(img) {
+  return new Promise(resolve => {
+    if (img.complete) return resolve();
+    img.onload = resolve;
+  });
+}
+
+/* START GAME */
+Promise.all([loadImage(moleImg), loadImage(benImg)])
+  .then(() => {
+    updateHUD();
+    spawnHandle = setInterval(spawn, 800);
+    timerHandle = setInterval(() => {
+      timeLeft--;
+      updateHUD();
+      if (timeLeft <= 0) endGame();
+    }, 1000);
+    requestAnimationFrame(tick);
+  });
+
+</script>
+</body>
+</html>
